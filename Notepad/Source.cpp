@@ -21,16 +21,17 @@
 #define IDI_ICON      101
 
 #define IDC_STATUSBAR 1000
-
 #ifndef UNICODE
- 
+
 #define UNICODE
 #endif 
 HWND g_hEdit;
 HFONT g_hFont;
 HWND g_hwnd;
+HMENU hMenu;
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-
+void DoOpenFile(HWND);
+void AddMenus(HWND);
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR  lpszArgument, int nCmdShow) {
 	const wchar_t CLASS_NAME[] = L"Note Pad";
 	WNDCLASSEX wc;
@@ -73,7 +74,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR  lpszArgument, int nCmd
 	}
 	g_hwnd = hwnd;
 	ShowWindow(hwnd, nCmdShow);
-	
+
 	HACCEL hAccel = LoadAccelerators(hInstance, MAKEINTRESOURCE(203));
 
 	bool done = false;
@@ -182,41 +183,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		// Resize the toolbar, and then show it.
 		SendMessage(hToolbar, TB_AUTOSIZE, 0, 0);
 		ShowWindow(hToolbar, TRUE);
-		HWND hWndStatusBar = CreateWindowEx(
-			0,
-			STATUSCLASSNAME,
-			NULL,
-			WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
-			0,
-			0,
-			0,
-			0,
-			hwnd,
-			(HMENU)IDC_MAIN_STATUS,
-			(HINSTANCE)GetWindowLong(hwnd, GWL_HINSTANCE),
-			NULL);
-		if (!hWndStatusBar)
-		{
-			MessageBox(NULL, L"Failed To Create The Status Bar", L"Error", MB_OK | MB_ICONERROR);
-			return 0;
-		}
-		int statwidths[] = { 100, -1 };
-		//wchar_t text[256];
-		SendMessage(hWndStatusBar, SB_SETPARTS, sizeof(statwidths)/sizeof(int), (LPARAM) (statwidths));
-		SendMessage(hWndStatusBar, SB_SETTEXT, 0, (LPARAM)L"Status Bar");`
-		SendMessage(hWndStatusBar, SB_SETTEXTA, 1, (LPARAM)("Ln "+ln));
-		SendMessage(hWndStatusBar, SB_SETTEXTA, 2, (LPARAM)("Col " + col));
-		ShowWindow(hWndStatusBar, SW_SHOW);
-	}	
+		AddMenus(hwnd);
+	}
 
-		break;
+	break;
 	case WM_SIZE:
 		HWND hTool;
 		RECT rcTool;
 		int iToolHeight;
-		HWND hStatus;
-		RECT rcStatus;
-		int iStatusHeight;
 		int iEditHeight;
 		RECT rcClient;
 		// Size toolbar and get height
@@ -224,21 +198,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		SendMessage(hTool, TB_AUTOSIZE, 0, 0);
 		GetWindowRect(hTool, &rcTool);
 		iToolHeight = rcTool.bottom - rcTool.top;
-		//Size status and get height
-		hStatus = GetDlgItem(hwnd, IDC_STATUSBAR);
-		SendMessage(hStatus, WM_SIZE, 0, 0);
-		GetWindowRect(hStatus, &rcStatus);
-		iStatusHeight = rcStatus.bottom - rcStatus.top;
 		//Calculate the remaining for the edit control
 		GetClientRect(hwnd, &rcClient);
-		iEditHeight = rcClient.bottom - iToolHeight - iStatusHeight;
+		iEditHeight = rcClient.bottom - iToolHeight;
 		hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
 		SetWindowPos(hEdit, NULL, 0, iToolHeight, rcClient.right, iEditHeight, SWP_NOZORDER);
 
 
 		break;
 	case WM_COMMAND:
-		switch(wParam) {
+		switch (wParam) {
 		case IDM_EDUNDO:
 			if (SendMessage(hEdit, EM_CANUNDO, 0, 0)) {
 				SendMessage(hEdit, WM_UNDO, 0, 0);
@@ -262,9 +231,75 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		case IDM_EDDEL:
 			SendMessage(hEdit, WM_CLEAR, 0, 0);
 			break;
+		case 4:
+			DestroyWindow(hwnd);
+			break;
+		case 2:
+			DoOpenFile(hwnd);
+			break;
 		}
 	}
 
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
-	
+
+
+}
+
+void AddMenus(HWND hwnd) {
+	hMenu = CreateMenu();
+	HMENU hFileMenu = CreateMenu();
+	AppendMenu(hFileMenu, MF_STRING, 1, L"New");
+	AppendMenu(hFileMenu, MF_STRING, 2, L"Open");
+	AppendMenu(hFileMenu, MF_STRING, 3, L"Save");
+	AppendMenu(hFileMenu, MF_STRING, 4, L"Exit");
+	AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hFileMenu, L"File");
+
+	SetMenu(hwnd, hMenu);
+}
+
+BOOL LoadFileToEdit(HWND hEdit, LPWSTR pszFileName) {
+	HANDLE hFile;
+	BOOL bSuccess = FALSE;
+	hFile = CreateFileW(pszFileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+	if (hFile != INVALID_HANDLE_VALUE) {
+		DWORD dwFileSize;
+		dwFileSize = GetFileSize(hFile, NULL);
+		if (dwFileSize != 0xFFFFFFFF) {
+			LPCWSTR pszFileText;
+			pszFileText = (LPCWSTR)GlobalAlloc(GPTR, dwFileSize + 1);
+			if (pszFileText != NULL) {
+				DWORD dwRead;
+				if (ReadFile(hFile, (LP)pszFileText, dwFileSize, &dwRead, NULL)) {
+					//pszFileText[dwFileSize] = 0;
+			
+					if (SetWindowTextW(hEdit, (LPCWSTR)pszFileText)) {
+						bSuccess = TRUE;
+					}
+					GlobalFree((HGLOBAL)pszFileText);
+
+				}
+			}
+			CloseHandle(hFile);
+		}
+		return bSuccess;
+	}
+}
+
+
+void DoOpenFile(HWND hwnd) {
+	OPENFILENAME ofn;
+	char szFileName[260] ;
+	ZeroMemory(&ofn, sizeof(ofn));
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = hwnd;
+	ofn.lpstrFilter = L"Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+	ofn.lpstrFile = (LPWSTR)szFileName;
+	ofn.nMaxFile = 260;
+	ofn.Flags= OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+	ofn.lpstrDefExt = L"txt";
+	if (GetOpenFileName(&ofn)) {
+		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
+		LoadFileToEdit(hEdit, (LPWSTR)ofn.lpstrFile);
+	}
+
 }
