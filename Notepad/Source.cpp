@@ -32,6 +32,9 @@ HMENU hMenu;
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void DoOpenFile(HWND);
 void AddMenus(HWND);
+void DoSaveFile(HWND);
+void DoFileOpen(HWND);
+void DoFileSave(HWND);
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR  lpszArgument, int nCmdShow) {
 	const wchar_t CLASS_NAME[] = L"Note Pad";
 	WNDCLASSEX wc;
@@ -235,7 +238,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			DestroyWindow(hwnd);
 			break;
 		case 2:
-			DoOpenFile(hwnd);
+			DoFileOpen(hwnd);
+			break;
+		case 1:
+			SetDlgItemText(hwnd, IDC_MAIN_EDIT, L"");
+			break;
+		case 3:
+			DoFileSave(hwnd);
 			break;
 		}
 	}
@@ -257,49 +266,118 @@ void AddMenus(HWND hwnd) {
 	SetMenu(hwnd, hMenu);
 }
 
-BOOL LoadFileToEdit(HWND hEdit, LPWSTR pszFileName) {
+
+void LoadTextFileToEdit(HWND hEdit, LPWSTR pszFileName)
+{
 	HANDLE hFile;
-	BOOL bSuccess = FALSE;
-	hFile = CreateFileW(pszFileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-	if (hFile != INVALID_HANDLE_VALUE) {
+
+	hFile = CreateFile(pszFileName, GENERIC_READ, FILE_SHARE_READ, NULL,
+		OPEN_EXISTING, 0, NULL);
+	if (hFile != INVALID_HANDLE_VALUE)
+	{
 		DWORD dwFileSize;
+
 		dwFileSize = GetFileSize(hFile, NULL);
-		if (dwFileSize != 0xFFFFFFFF) {
-			LPCWSTR pszFileText;
-			pszFileText = (LPCWSTR)GlobalAlloc(GPTR, dwFileSize + 1);
-			if (pszFileText != NULL) {
+		if (dwFileSize != 0xFFFFFFFF)
+		{
+			LPWSTR pszFileText;
+
+			pszFileText = (LPWSTR)GlobalAlloc(GPTR, 2 * (dwFileSize + 1));
+			if (pszFileText != NULL)
+			{
 				DWORD dwRead;
-				if (ReadFile(hFile, (LP)pszFileText, dwFileSize, &dwRead, NULL)) {
-					//pszFileText[dwFileSize] = 0;
-			
-					if (SetWindowTextW(hEdit, (LPCWSTR)pszFileText)) {
-						bSuccess = TRUE;
-					}
-					GlobalFree((HGLOBAL)pszFileText);
+
+				if (ReadFile(hFile, pszFileText, 2 * dwFileSize, &dwRead, NULL))
+				{
+					pszFileText[dwFileSize] = L'\0'; // Add null terminator
+					SetWindowText(hEdit, pszFileText);
 
 				}
+				GlobalFree(pszFileText);
 			}
-			CloseHandle(hFile);
 		}
-		return bSuccess;
+		CloseHandle(hFile);
 	}
+
 }
 
+void SaveTextFileFromEdit(HWND hEdit, LPWSTR pszFileName)
+{
+	HANDLE hFile;
 
-void DoOpenFile(HWND hwnd) {
+
+	hFile = CreateFile(pszFileName, GENERIC_WRITE, 0, NULL,
+		CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hFile != INVALID_HANDLE_VALUE)
+	{
+		DWORD dwTextLength;
+
+		dwTextLength = GetWindowTextLength(hEdit);
+		if (dwTextLength > 0)
+		{
+			LPWSTR pszText;
+			DWORD dwBufferSize = dwTextLength + 1;
+
+			pszText = (LPWSTR)GlobalAlloc(GPTR, 2 * dwBufferSize);
+			if (pszText != NULL)
+			{
+				if (GetWindowTextW(hEdit, pszText, dwBufferSize))
+				{
+					DWORD dwWritten;
+
+					WriteFile(hFile, pszText, 2 * dwTextLength, &dwWritten, NULL);
+
+				}
+				GlobalFree(pszText);
+			}
+		}
+		CloseHandle(hFile);
+	}
+
+}
+
+void DoFileOpen(HWND hwnd)
+{
 	OPENFILENAME ofn;
-	char szFileName[260] ;
+	char szFileName[MAX_PATH] = "";
+
 	ZeroMemory(&ofn, sizeof(ofn));
+
 	ofn.lStructSize = sizeof(ofn);
 	ofn.hwndOwner = hwnd;
 	ofn.lpstrFilter = L"Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
 	ofn.lpstrFile = (LPWSTR)szFileName;
-	ofn.nMaxFile = 260;
-	ofn.Flags= OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+	ofn.nMaxFile = MAX_PATH;
+	ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 	ofn.lpstrDefExt = L"txt";
-	if (GetOpenFileName(&ofn)) {
-		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
-		LoadFileToEdit(hEdit, (LPWSTR)ofn.lpstrFile);
-	}
 
+	if (GetOpenFileName(&ofn))
+	{
+		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
+		LoadTextFileToEdit(hEdit, (LPWSTR)szFileName);
+
+	}
+}
+
+void DoFileSave(HWND hwnd)
+{
+	OPENFILENAME ofn;
+	char szFileName[MAX_PATH] = "";
+
+	ZeroMemory(&ofn, sizeof(ofn));
+
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = hwnd;
+	ofn.lpstrFilter = L"Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+	ofn.lpstrFile = (LPWSTR)szFileName;
+	ofn.nMaxFile = MAX_PATH;
+	ofn.lpstrDefExt = L"txt";
+	ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT;
+
+	if (GetSaveFileName(&ofn))
+	{
+		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
+		SaveTextFileFromEdit(hEdit, (LPWSTR)szFileName);
+
+	}
 }
